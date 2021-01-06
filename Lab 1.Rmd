@@ -1,0 +1,147 @@
+---
+title: "Lab #1:  Practice in R"
+author: "Ntemena Kapula"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(1)
+```
+
+The purpose of this lab is to get you comfortable working in R and trying a few things from the first lecture.
+
+## Simulating data:
+
+We will simulate something like the weight vs. age data from a cubic function and add some noise and then apply a few methods.
+
+1. Write a function in R to input the value  (age) and output, “noise-free” weight: 
+$f(x) = -0.0004x^3 + 0.025x^2 + 2x + 50$
+```{r}
+make_weight <- function(age) {
+  -0.0004 * age^3 + 0.025 * age^2 + 2 * age + 50
+}
+```
+
+2. Next we will simulate some values for $x$. Use the sample function to generate a random sample of integers between 40 and 80 of size 1000 (you will need the replace=TRUE option to make sure the numbers can be resampled otherwise you will run out of values quickly). Don’t forget that you can type `?sample` to get help as to how to use the function.
+```{r}
+?sample
+
+age <- sample(seq(40, 80), size=1000, replace=TRUE)
+hist(age)
+```
+
+3. Now generate a vector of the output of your function in part 1 to generate the noise-free weights for each of the 1000 individuals.
+```{r}
+no_noise_weights <- make_weight(age)
+no_noise_weights
+```
+
+4. Use `rnorm` to generate some normally distributed noise with mean 0.0 and sd of 10.0 for each of the  values.
+```{r}
+noise <- rnorm(1000, mean=0, sd=10)
+hist(noise)
+
+```
+
+5. Add the noise-free weights to the noise to get your simulated outcome data.
+```{r}
+weights <- no_noise_weights + noise
+```
+
+6. Put these together in a dataframe with columns for age, weight (the observed outcome with noise), trueFx (the noise-free weight value), and noise.
+```{r}
+df <- data.frame(age=age, weight=weights, trueFx=no_noise_weights, noise=noise)
+df
+
+```
+
+7. Generate a plot of weight against age.
+```{r}
+plot(weights, age, pch=19, cex=0.4)
+```
+
+## Applying smoothing kernels:
+1. Fit a nearest neighbors curve with ksmooth using a bandwidth of 10 and the `box` kernel.
+```{r}
+box_curve <- ksmooth(df$age, df$weight, kernel = "box", bandwidth = 10)
+plot(box_curve)
+```
+
+2. Fit another curve this time using the `normal` kernel.
+```{r}
+normal_curve <- ksmooth(df$age, df$weight, kernel = "normal", bandwidth = 10)
+```
+
+3. Plot the data with the two fitted curves and compare them. Hint: look at the object you have generated with ksmooth (i.e. type `name_of_the_object` or `print(name_of_the_object)`. Also, try `names(name_of_the_object)`. Use the command `lines` to plot the curves.
+```{r}
+plot(age, weights, pch=19, cex=0.4)
+lines(box_curve$x, box_curve$y, lwd=3, col="red")
+lines(normal_curve$x, normal_curve$y, lwd=3, col="blue")
+legend("bottomright", cex=0.8, lwd=3, lty=c(1,1,2,3),c("box bw=10", "normal bw=10"), col=c("red", "blue"))
+
+```
+
+4. Fit another 2 curves with the "normal" kernel using bandwidths of size 5, 10, and 20. How do they compare?
+```{r}
+normal_curve5 <- ksmooth(df$age, df$weight, kernel = "normal", bandwidth = 5)
+normal_curve10 <- ksmooth(df$age, df$weight, kernel = "normal", bandwidth = 10)
+normal_curve20 <- ksmooth(df$age, df$weight, kernel = "normal", bandwidth = 20)
+
+plot(age, weights, pch=19, cex=0.4)
+lines(normal_curve5$x, normal_curve5$y, lwd=3, col="blue")
+lines(normal_curve10$x, normal_curve10$y, lwd=3, col="red")
+lines(normal_curve20$x, normal_curve20$y, lwd=3, col="green")
+legend("bottomright", cex=0.8, lwd=3, lty=c(1,1,2,3), c("normal bw=5","normal bw=10","normal bw=20"), col=c("blue", "red", "green"))
+
+```
+
+
+## Fitting linear models:
+1. Fit a linear regression to the data using the `lm` command.
+```{r}
+head(df)
+linear_model <- lm(weight ~ age, data=df)
+```
+
+2. Run `summary(your_linear_model_name)` to get an idea of the fit
+```{r}
+summary(linear_model)
+```
+
+3. Now fit quadratic and cubic models: you will need the `I` function to set quadratic and cubic terms in the regression, e.g. `I(x^2)`
+```{r}
+#quadratic model
+quatratic_model <- lm(weight ~ age + I(age^2), data=df)
+summary(quatratic_model)
+#cubic model
+cubic_model <- lm(weight ~ age + I(age^2) + I(age^3), data=df)
+summary(cubic_model)
+```
+
+4. Add the fitted models to the plots. For the linear model, use the `abline` command. For the polynomial fits, you can use the `curve` command (you will need the option `add = TRUE`).
+```{r}
+?predict
+?predict.lm
+?curve
+
+quad_predict <- function(age) {predict(quatratic_model, newdata = data.frame(age=age))}
+cubic_predict <- function(age) {predict(cubic_model, newdata = data.frame(age=age))}
+
+plot(age, weights, pch=19, cex=0.4)
+abline(linear_model, col="red", lwd=3)
+curve(quad_predict, col="blue", lwd=2, add=T)
+curve(cubic_predict, col="green", lwd=2, lty=2, add=T)
+legend("bottomright", cex=0.8, lwd=3, lty=c(1,1,2), c("Linear", "Quadratic", "cubic"), col = c("red", "blue", "green"))
+```
+
+5. Which curve do you prefer? How would you perform a hypothesis test for this?
+```{r}
+anova(linear_model, quatratic_model, cubic_model)
+```
+
+## Practice installing an R package
+6. R packages are easy to install using the `install.packages` command. Try installing the `e1071` package. We'll use this package later in the course for fitting support vector machines.
+```{r}
+# install.packages("e1071")
+```
