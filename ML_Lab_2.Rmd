@@ -1,0 +1,181 @@
+---
+title: 'Lab #2:  Classification in R'
+author: "Ntemena Kapula"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(24)
+
+library(MASS)
+
+#install.packages("scatterplot3d") 
+library(scatterplot3d) 
+
+#install.packages("ROCit")
+library(ROCit)
+```
+
+The purpose of this lab is to get you familiar with fitting classification models in R.
+
+## Simulating data:
+
+We will simulate something like the weight vs. age data from a cubic function and add some noise and then apply a few methods.
+
+1. Simulate a multivariate (3 variables) predictor with 3 classes using the following.
+```{r sim_mvr}
+nsamp <- 100 
+SMat <- matrix(c(1.0, 0.6, 0.3, 0.4, 1.0, 0.7, 0.1, 0.1, 1.0), nrow=3, ncol=3) 
+datmat1 <- mvrnorm(n = nsamp, mu = rep(-1.0, 3), Sigma = SMat) 
+datmat2 <- mvrnorm(n = nsamp, mu = rep(1.0, 3), Sigma = SMat) 
+datmat3 <- mvrnorm(n = nsamp, mu = c(0.0,0.5,-1.0), Sigma = SMat) 
+```
+
+2. Stack `datamat1`, `datamat2`, and `datamat3` to generate a single 300x3 matrix called datamat. 
+```{r}
+datamat <- rbind(datmat1, datmat2, datmat3)
+dim(datamat)
+```
+
+3. Generate a groups factor such that the first 100 data points are labeled `outcome1`, the second 100 `outcome2`, and the third 100 `outcome3`. 
+```{r}
+groups <- factor(c(rep("outcome1", nsamp), rep("outcome2", nsamp), rep("outcome3", nsamp)))
+```
+
+4. Combine groups and datamat into a data frame called `dat`. Give the dataframe column names `groups`, `predictor1`, `predictor2`, `predictor3`.
+```{r}
+dat <- data.frame(
+  groups=groups,
+  datamat
+)
+
+names(dat) <- c("groups", "predictor1", "predictor2", "predictor3")
+```
+
+5. Make pairwise plots of the predictors in the data using the command `pairs`.
+```{r}
+pairs(dat)
+```
+
+6. Re-do the scatterplot so that get each data-point is color coded by groups using the `col` argument.
+```{r}
+pairs(dat, col=1+as.numeric(dat$groups))
+```
+
+7. Use it to plot the data in 3D using `scatterplot3d`. Color-code the points by group.
+```{r}
+s3d <- scatterplot3d(dat$predictor1, dat$predictor2, dat$predictor3, xlab="Predictor 1", ylab="Predictor 2", zlab="Predictor 3", pch=16, color=1+as.numeric(dat$groups), main="3D Scatterplot")
+
+legend(s3d$xyz.convert(3.5, 2,3), levels(dat$groups), col = 2:4, pch=16)
+```
+
+8. Simulate a new set of test data (call it `test_dat`) with the same settings and the same number of observations. Use `set.seed(15)` instead.
+```{r}
+set.seed(15)
+
+nsamp <- 100 
+SMat <- matrix(c(1.0, 0.6, 0.3, 0.4, 1.0, 0.7, 0.1, 0.1, 1.0), nrow=3, ncol=3) 
+datmat1b <- mvrnorm(n = nsamp, mu = rep(-1.0, 3), Sigma = SMat) 
+datmat2b <- mvrnorm(n = nsamp, mu = rep(1.0, 3), Sigma = SMat) 
+datmat3b <- mvrnorm(n = nsamp, mu = c(0.0,0.5,-1.0), Sigma = SMat) 
+
+datmatb <- rbind(datmat1b, datmat2b, datmat3b)
+test_dat <- data.frame(groups, datmatb)
+names(test_dat) <- c("groups", "predictor1", "predictor2", "predictor3")
+```
+
+
+## Logistic Regression
+
+9. Subset the dataset so that there are only the groups: `outcome1` and `outcome2`. Call the new data `dat2`. You should run `dat2 <- droplevels(dat2)` to remove the unused level from the factor. Otherwise R will still think you have a `outcome3` group.
+```{r}
+dat2 <- subset(dat, subset=groups %in% c("outcome1", "outcome2"))
+dat2 <- droplevels(dat2)
+levels(dat2$groups)
+```
+
+10. Fit a logistic regression with groups as the outcome/response variable and all 3 predictors (additive).
+```{r}
+glm1 <- glm(groups ~ predictor1 + predictor2 + predictor3, family=binomial(), data=dat2)
+# this is the same thing
+#glm1 <- glm(groups ~ ., family=binomial(), data=dat2)
+```
+
+11. Run summary on your model.
+```{r}
+summary(glm1)
+```
+
+12. Generate confidence intervals for your model parameters.
+```{r}
+confint(glm1)
+```
+
+13. Generate odds-ratios given the coefficients of your model. 
+```{r}
+exp(coefficients(glm1))
+```
+
+14. Generate odds-ratio confidence intervals for the fitted parameters. 
+```{r}
+exp(confint(glm1))
+
+```
+
+15. Subset test dataset `test_dat` so that it only has observations from `outcome1` and `outcome2`. Using the logistic regression model to predict the probability each observation in this filtered test dataset.
+```{r}
+test_dat_subset <- subset(test_dat, subset=groups != "outcome3")
+test_dat_subset$groups <- droplevels(test_dat_subset$groups)
+predictions <- predict(glm1, test_dat_subset, type = "response")
+
+```
+
+16. Use the `ROCit` package to fit and plot an ROC curve for this model using the test dataset using the `rocit` function.
+```{r}
+rocit_obj <- rocit(score = predictions, class=test_dat_subset$groups)
+plot(rocit_obj)
+```
+
+17. What is the AUC and its 95\% confidence interval (see `ciAUC`)?
+```{r}
+(ci_auc <- ciAUC(rocit_obj))
+```
+
+## Linear discriminant analysis
+
+18. Fit a linear discriminant analysis to the original data with 3 groups. 
+```{r}
+lda_fit <- lda(groups ~ ., data=dat)
+```
+
+19. Compare the estimated group means with the values used in the simulation. 
+```{r}
+lda_fit # outcome1 approx -1, outcome2 approx 1, outcome3 approx 0. output shown below
+```
+
+20. Examine the 3x3 table of predicted vs. actual observations in the training data. 
+```{r}
+lda_pred_train <- predict(lda_fit)
+
+table(pred=lda_pred_train$class, true=dat$groups)
+
+```
+
+21. Calculate prediction accuracy in the training data.
+```{r}
+mean(lda_pred_train$class == dat$groups)
+```
+
+22. Examine the 2x2 table of predicted vs. actual observations in the test dataset `test_dat`. 
+```{r}
+lda_pred_test <- predict(lda_fit, newdata = test_dat)
+table(pred=lda_pred_test$class, true=test_dat$groups)
+```
+
+23. Examine the predictive accuracy in the test dataset `test_dat`. How different is it?
+```{r}
+mean(lda_pred_test$class == test_dat$groups)
+```
