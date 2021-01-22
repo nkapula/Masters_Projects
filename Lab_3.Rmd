@@ -1,0 +1,166 @@
+---
+title: 'Lab #3:  Penalized Regression'
+author: 'Ntemena Kapula'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(24)
+
+library(MASS)
+
+```
+
+## Subset Selection
+
+1. Install the `leaps` package
+
+```{r}
+# install.packages("leaps")
+```
+
+2. Load the `leaps` package
+```{r}
+library(leaps, rtemis)
+```
+
+3. Read in the breast cancer imaging data "ispy1doctored.csv" into a data frame called `dat` 
+```{r}
+dat <- read.csv("ispy1doctored.csv")
+dat
+```
+
+4. How many predictors do you have available in the dataset? Are there categorical variables?
+```{r}
+
+ncol(dat) -1
+
+table(dat$HR_HER2status)
+
+# convert race to categorical one
+
+dat$race <- as.factor(dat$race)
+
+head(dat)
+
+```
+
+5. Perform best subset selection using the `regsubsets` function. Use `MRI_LD_Tfinal` as the outcome (the longest diameter of the breast cancer tumor at the final visit pre-surgery) and all other variables as predictors. Look at a summary of the fitted models. Allow the method to fit models that use all the predictors.
+```{r}
+#regfit <- regsubsets(MRI_LD_Tfinal ~ ., data = dat, nvmax = ncol(dat) + 1, nbest = 1)
+
+res <- regsubsets(MRI_LD_Tfinal ~., data=dat, nvmax = ncol(dat) + 5)
+
+summary(res)
+
+
+```
+
+6. You can grab the coefficients from the best subset selection procedure using the `coef` function. Print out the coefficients from the model with the best subset of size 3.
+```{r}
+#coef(regfit, 3)
+
+coef(res, 8)
+```
+
+## Ridge regression
+
+7. Install the package `glmnet`
+```{r}
+#install.packages("glmnet")
+```
+
+8. Load the `glmnet` package
+```{r}
+library("glmnet")
+```
+
+9. Convert the data into components `x` and `y` that are suitable for use in the `glmnet` package (we will continue to consider `MRI_LD_Tfinal` as the outcome)
+```{r}
+x <- model.matrix(MRI_LD_Tfinal ~ ., data = dat)[ ,-1]
+y <- dat$MRI_LD_Tfinal
+head(x)
+head(y)
+```
+
+10. Generate a set of values to try for lambda from $\lambda = 10^{5}$ to $\lambda = 10^{-2} = 0.01$. Even space out these values on the log10 scale.
+```{r}
+# grid <- 10^seq(5,-2,length=100)
+#lamdas <- 10^seq(-2,5, by=0.1) stepwise
+lambdas <- 10^seq(-2,5, length = 100 ) #state number of lamdas to test out
+lambdas
+```
+
+11. Fit ridge regression to the dataset with `MRI_LD_Tfinal` as outcome and all other variables as candidate predictors for all of the lambda values you have created
+```{r}
+#alpha=0 corresponds to ridge regression, alpha =1 is lasso reg
+ridmod <-glmnet(x, y, alpha=0, lambda = lambdas)
+```
+
+12. Look at the value of `lambda` associated with `ridgeMod[75]`
+```{r}
+ridmod$lambda[75]
+```
+
+13. Display the fitted coefficients associated with this value of `lambda`
+```{r}
+coef(ridmod)[,75]
+```
+
+13. And then the $l_2$ norm associated with this value of `lambda`
+```{r}
+sqrt((sum(coef(ridmod)[,75]^2)))
+```
+
+14. Repeat steps 17 to 19 for `lambda` associated with index 55. Is the difference in the $l_2$ norm in the direction that you would expect? Why/why not?
+```{r}
+ridmod$lambda[55]
+sqrt((sum(coef(ridmod)[,55]^2)))
+# The $l_2$ norm is much smaller for index 55 because the value of $\lambda$ is much larger. Therefore the shrinkage of coefficients toward zero is much stronger and therefore the sum of squares of the coefficients is much smaller. This is expected behavior.
+```
+## Lasso
+
+15. Fit lasso regression to the dataset with `MRI_LD_Tfinal` as outcome and all other variables as candidate predictors for the same set of lambda values you considered in fitting ridge regression 
+```{r}
+lassomod <- glmnet(x, y, lambda = lambdas, alpha=1)
+```
+
+16. What are the coefficients for the lasso fit for the 75th lambda value? How many coefficients are nonzero?
+```{r}
+lassoCoefs75 <- coef(lassomod)[,75]
+print(lassoCoefs75)
+mean(abs(lassoCoefs75) > 0)
+coeff_0 <- abs(lassoCoefs75) > 0
+table(coeff_0)["TRUE"]
+```
+
+## Cross-validation
+
+17. Install and load the `caret` package. Let's tune the lasso penalty parameter `lambda` using the `caret` package.
+```{r}
+#install.packages("caret")
+library(caret)
+```
+
+18. To run 5-fold cross-validation, use the `trainControl` method to specify that we'll be running 5-fold cv.
+```{r}
+trControl_cv5 <- trainControl(method = "cv", number = 5)
+```
+
+19. To perform 5-fold cross-validation using the `train` method in `caret`, we need to specify the grid of hyper-parameter values. Create a data.frame called `caret_grid` with two columns: `lambda` and `alpha`. We'll keep the value of the `alpha` column fixed at 1 because we want to use the lasso. Use the values in `grid` for the `lambda` column.
+```{r}
+caret_grid <- data.frame(alpha=1, lambda=lambdas)
+caret_grid
+```
+
+20. Perform 5-fold cross-validation using the `train` method in `caret` over the values in `caret_grid`. Which value of `lambda` did 5-fold CV pick?
+```{r message=FALSE}
+cv_res <- train(MRI_LD_Tfinal ~ ., data = dat, method="glmnet", trControl=trControl_cv5, tuneGrid=caret_grid)
+cv_res$bestTune
+```
+
+21. The final model selected by `caret` is given by `cv_model$finalmodel`. What are the coefficients in the selected model?
+```{r}
+coef(cv_res$finalModel, s=cv_res$bestTune$lambda)
+```
